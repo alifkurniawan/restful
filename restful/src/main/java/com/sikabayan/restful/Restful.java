@@ -1,17 +1,15 @@
 package com.sikabayan.restful;
 
 
-
-import android.content.Context;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
+import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
@@ -22,10 +20,15 @@ import java.util.Map;
  */
 public class Restful {
 
+    private static Restful ourInstance;
+    private int timeOut = 500;
     private String authorization;
     private String urlBase;
 
-    private static Restful ourInstance;
+    private Restful(String authorization, String urlBase) {
+        this.authorization = authorization;
+        this.urlBase = urlBase;
+    }
 
     public static Restful getInstance(String authorization, String urlBase) {
         if (ourInstance == null)
@@ -33,9 +36,15 @@ public class Restful {
         return ourInstance;
     }
 
-    private Restful(String authorization, String urlBase) {
-        this.authorization = authorization;
-        this.urlBase = urlBase;
+    private static String readResult(HttpURLConnection conn) throws Exception {
+        InputStream in = new BufferedInputStream(conn.getInputStream());
+        StringBuilder sb = new StringBuilder();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+        String nextLine;
+        while ((nextLine = reader.readLine()) != null) {
+            sb.append(nextLine);
+        }
+        return sb.toString();
     }
 
     public Response get(String method, HashMap<String, String> header, HashMap<String, String> parameters) {
@@ -45,7 +54,7 @@ public class Restful {
 
         // Add Parameters
         String params = "";
-        if (parameters!=null || parameters.size() !=0) {
+        if (parameters != null && parameters.size() != 0) {
             params = "?";
             for (Map.Entry<String, String> param : parameters.entrySet()) {
                 if (params.length() > 1) {
@@ -58,31 +67,57 @@ public class Restful {
         try {
             URL url = new URL(this.urlBase + method + params);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(this.timeOut);
             statusCode = conn.getResponseCode();
+
+
+            // Set Header
+            if (header != null && parameters.size() != 0) {
+                for (Map.Entry<String, String> head : header.entrySet())
+                    conn.setRequestProperty(head.getKey(), head.getValue());
+            }
             conn.setRequestProperty("Authorization", this.authorization);
-            InputStream is = new BufferedInputStream(conn.getInputStream());
-            content = readStream(is);
+
+            // Read Result
+            content = readResult(conn);
+
             return new Response(content, statusCode);
         } catch (Exception e) {
             return new Response(content, statusCode);
         }
     }
 
-    public Response post(String url, String method, HashMap<String, String> header, HashMap<String, String> parameters) {
+    public Response post(String method, JSONObject jsonObject) {
         String content = "";
         int statusCode = 0;
 
-        return new Response(content, statusCode);
+        try {
+            URL url = new URL(this.urlBase + method);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(this.timeOut);
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Authorization", this.authorization);
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setDoInput(true);
+            conn.setDoOutput(true);
+
+            OutputStreamWriter wr = new OutputStreamWriter(conn.getOutputStream());
+            wr.write(jsonObject.toString());
+            wr.flush();
+
+            // Read Result
+            content = this.readResult(conn);
+
+            return new Response(content, statusCode);
+
+        } catch (Exception e) {
+            return new Response(content, 0);
+        }
     }
 
-    private static String readStream(InputStream in) throws Exception {
-        StringBuilder sb = new StringBuilder();
-        BufferedReader reader = new BufferedReader(new InputStreamReader(in));
-        String nextLine;
-        while ((nextLine = reader.readLine()) != null) {
-            sb.append(nextLine);
-        }
-        return sb.toString();
+    public void setTimeOut(int timeOut) {
+        this.timeOut = timeOut;
     }
 
 
